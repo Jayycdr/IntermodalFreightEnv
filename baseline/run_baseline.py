@@ -369,10 +369,11 @@ def main():
         description="Run baseline agents and compare performance"
     )
     parser.add_argument(
-        "--api_url",
+        "--base-url",
         type=str,
         default="http://localhost:8000",
         help="Base URL for API",
+        dest="base_url",
     )
     parser.add_argument(
         "--agent_type",
@@ -402,11 +403,11 @@ def main():
     
     args = parser.parse_args()
     
-    runner = BaselineRunner(api_url=args.api_url)
+    runner = BaselineRunner(api_url=args.base_url)
     
     # Verify API connection
     if not runner._verify_api_connection():
-        logger.error(f"Cannot connect to API at {args.api_url}")
+        logger.error(f"Cannot connect to API at {args.base_url}")
         logger.info("Please ensure the API is running: python -m uvicorn app.main:app --reload")
         return
     
