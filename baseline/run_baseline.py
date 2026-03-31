@@ -441,6 +441,10 @@ def main():
         with open(args.output, "w") as f:
             json.dump(report, f, indent=2)
         logger.info(f"Results saved to {args.output}")
+    
+    # Exit successfully
+    import sys
+    sys.exit(0)
 
 
 if __name__ == "__main__":
