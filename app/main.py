@@ -617,6 +617,137 @@ async def find_shortest_path(origin: int, destination: int, weight: str = "time"
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ============================================================================
+# Task & Grading Endpoints
+# ============================================================================
+
+@app.get("/tasks")
+async def get_tasks():
+    """
+    Get all available tasks with their action schemas.
+    
+    Returns 3 tasks:
+    - Task 1: Time Minimization
+    - Task 2: Cost Minimization
+    - Task 3: Multimodal Optimization
+    """
+    tasks = [
+        {
+            "name": "Task 1: Time Minimization",
+            "id": "task_1_time",
+            "description": "Minimize total transit time while delivering all cargos",
+            "objective": "minimize-time",
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["task_1_time"]},
+                    "cargo_id": {"type": "integer"},
+                    "path": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["task_type", "cargo_id", "path"]
+            }
+        },
+        {
+            "name": "Task 2: Cost Minimization",
+            "id": "task_2_cost",
+            "description": "Minimize total operational cost while delivering all cargos",
+            "objective": "minimize-cost",
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["task_2_cost"]},
+                    "cargo_id": {"type": "integer"},
+                    "path": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["task_type", "cargo_id", "path"]
+            }
+        },
+        {
+            "name": "Task 3: Multimodal Optimization",
+            "id": "task_3_multimodal",
+            "description": "Optimize routing across transportation modes while balancing time, cost, and carbon",
+            "objective": "balance-trilemma",
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["task_3_multimodal"]},
+                    "cargo_id": {"type": "integer"},
+                    "cargo_type": {"type": "string", "enum": ["truck", "rail", "ship", "air"]},
+                    "path": {"type": "array", "items": {"type": "string"}},
+                    "split_at": {"type": "array", "items": {"type": "integer"}}
+                },
+                "required": ["task_type", "cargo_id", "cargo_type", "path", "split_at"]
+            }
+        }
+    ]
+    
+    return BaseResponse(
+        success=True,
+        message="3 tasks available",
+        data={"tasks": tasks, "count": 3}
+    )
+
+
+@app.post("/grader")
+async def grade_trajectory(trajectory: dict = None):
+    """
+    Grade a trajectory and return a score.
+    
+    Accepts a trajectory object with step data and returns a score
+    calculated using the weighted formula:
+    Score = 0.5×time + 0.3×cost + 0.2×carbon
+    
+    Score is normalized to [0.0, 1.0] range.
+    """
+    try:
+        from app.api.grader import Grader, TaskType
+        
+        # Extract trajectory from request
+        trajectory_data = trajectory if isinstance(trajectory, dict) else {}
+        trajectory_steps = trajectory_data.get("trajectory", []) or trajectory_data.get("steps", [])
+        task_type = trajectory_data.get("task_type", "task_3_multimodal")
+        
+        # Map task_type to TaskType enum
+        task_type_map = {
+            "task_1_time": TaskType.TASK_1_TIME,
+            "task_2_cost": TaskType.TASK_2_COST,
+            "task_3_multimodal": TaskType.TASK_3_MULTIMODAL,
+        }
+        task = task_type_map.get(task_type, TaskType.TASK_3_MULTIMODAL)
+        
+        # Initialize grader and evaluate
+        grader = Grader()
+        grader.load_trajectory(trajectory_steps)
+        result = grader.evaluate(task_type=task)
+        
+        # Normalize score to [0, 1]
+        normalized_score = max(0.0, min(1.0, result.efficiency_score / 100.0))
+        
+        return BaseResponse(
+            success=True,
+            message=f"Trajectory graded ({result.task_type.value})",
+            data={
+                "score": normalized_score,
+                "efficiency_score": result.efficiency_score,
+                "weighted_score": result.weighted_score,
+                "metrics": {
+                    "accumulated_hours": result.raw_metrics.accumulated_hours,
+                    "accumulated_cost": result.raw_metrics.accumulated_cost,
+                    "accumulated_carbon": result.raw_metrics.accumulated_carbon,
+                },
+                "cargos_delivered": result.cargos_delivered,
+                "task_type": result.task_type.value,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Grading failed: {str(e)}")
+        return BaseResponse(
+            success=False,
+            message=f"Grading error: {str(e)}",
+            data={"score": 0.0}
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
