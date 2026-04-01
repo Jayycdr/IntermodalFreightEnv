@@ -31,7 +31,8 @@ from app.api.schemas import (
     NodeData,
     EdgeData,
 )
-from app.engine.core_env import FreightEnvironment, EnvironmentConfig, TrilemmaCounters
+from app.engine.core_env import FreightEnvironment, EnvironmentConfig
+from app.api.grader import TrilemmaMetrics
 
 
 # ============================================================================
