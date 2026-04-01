@@ -7,6 +7,7 @@ Manages the state, dynamics, and rules of the intermodal freight environment.
 from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass, field
 import numpy as np
+import uuid
 
 from app.utils.logger import logger
 
@@ -41,6 +42,7 @@ class FreightEnvironment:
         self.network_config = {}
         self.nodes = {}
         self.edges = []
+        self.episode_id = str(uuid.uuid4())
         
         if self.config.seed is not None:
             np.random.seed(self.config.seed)
@@ -51,12 +53,15 @@ class FreightEnvironment:
         """
         Reset the environment to initial state.
         
+        Generates a new episode_id (UUID) to prevent state bleed.
+        
         Returns:
             Initial environment state
         """
         self.current_step = 0
+        self.episode_id = str(uuid.uuid4())  # Generate new UUID for each reset
         self.state = self._initialize_state()
-        logger.info("Environment reset")
+        logger.info(f"Environment reset with episode_id={self.episode_id}")
         return self.state
 
     def setup_network(self, network_config: Dict[str, Any]) -> None:
