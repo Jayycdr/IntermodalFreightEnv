@@ -1,5 +1,5 @@
 # Use official Python image as base
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 # Set working directory in container
 WORKDIR /app
@@ -9,10 +9,14 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-# Install system dependencies
+# Install system dependencies and Python build tools
 RUN apt-get update && apt-get install -y \
     gcc \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install setuptools
+RUN pip install --upgrade pip setuptools wheel
 
 # Copy requirements file
 COPY requirements.txt .
