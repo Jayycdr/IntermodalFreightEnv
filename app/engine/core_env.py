@@ -38,6 +38,9 @@ class FreightEnvironment:
         self.config = config or EnvironmentConfig()
         self.current_step = 0
         self.state = {}
+        self.network_config = {}
+        self.nodes = {}
+        self.edges = []
         
         if self.config.seed is not None:
             np.random.seed(self.config.seed)
@@ -55,6 +58,18 @@ class FreightEnvironment:
         self.state = self._initialize_state()
         logger.info("Environment reset")
         return self.state
+
+    def setup_network(self, network_config: Dict[str, Any]) -> None:
+        """
+        Setup the network configuration.
+        
+        Args:
+            network_config: Dictionary with nodes and edges
+        """
+        self.network_config = network_config
+        self.nodes = {node["id"]: node for node in network_config.get("nodes", [])}
+        self.edges = network_config.get("edges", [])
+        logger.info(f"Network setup with {len(self.nodes)} nodes and {len(self.edges)} edges")
 
     def step(self, action: Dict[str, Any]) -> Tuple[Dict[str, Any], float, bool, Dict]:
         """
