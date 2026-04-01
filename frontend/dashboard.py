@@ -123,7 +123,11 @@ def grade_trajectory(task_id, trajectory):
         )
         
         if response.status_code == 200:
-            return response.json()
+            api_response = response.json()
+            # Extract data from nested response format
+            if "data" in api_response:
+                return api_response["data"]
+            return api_response
         else:
             st.error(f"Grading failed: {response.text}")
             return None
