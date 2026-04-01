@@ -19,6 +19,78 @@ class TaskType(str, Enum):
     TASK_3_MULTIMODAL = "task_3_multimodal"
 
 
+class TransportationMode(str, Enum):
+    """Supported transportation modes with realistic characteristics."""
+    TRUCK = "truck"
+    SHIP = "ship"
+    RAIL = "rail"
+    FLIGHT = "flight"
+
+
+@dataclass
+class ModeCharacteristics:
+    """Characteristics of each transportation mode per 100 km."""
+    
+    speed_kmh: float          # Average speed in km/h
+    cost_per_km: float       # Cost in $100s per km
+    carbon_per_km: float     # Carbon in tons per km
+    capacity_tons: float     # Max cargo capacity in tons
+    min_distance: float      # Minimum viable distance
+    
+    def calculate_metrics(self, distance_km: float, cargo_tons: float) -> tuple:
+        """
+        Calculate time, cost, carbon for a shipment.
+        
+        Returns: (hours, cost, carbon)
+        """
+        # Clamp cargo to capacity
+        cargo = min(cargo_tons, self.capacity_tons)
+        
+        # Time = distance / speed
+        time_hours = distance_km / self.speed_kmh if self.speed_kmh > 0 else float('inf')
+        
+        # Cost = distance * cost_per_km (scales with distance)
+        cost = distance_km * self.cost_per_km
+        
+        # Carbon = distance * carbon_per_km (per km, not per ton)
+        carbon = distance_km * self.carbon_per_km
+        
+        return time_hours, cost, carbon
+
+
+# Mode characteristics (per 100 km, realistic data)
+MODE_CHARACTERISTICS: Dict[TransportationMode, ModeCharacteristics] = {
+    TransportationMode.TRUCK: ModeCharacteristics(
+        speed_kmh=80.0,           # Average highway speed
+        cost_per_km=0.15,         # $15 per 100 km
+        carbon_per_km=0.025,      # High emissions
+        capacity_tons=25.0,       # Typical truck capacity
+        min_distance=50.0,
+    ),
+    TransportationMode.RAIL: ModeCharacteristics(
+        speed_kmh=90.0,           # Average rail speed
+        cost_per_km=0.08,         # $8 per 100 km (cheaper than truck)
+        carbon_per_km=0.008,      # Much better emissions
+        capacity_tons=100.0,      # High capacity
+        min_distance=200.0,       # Needs longer distances
+    ),
+    TransportationMode.SHIP: ModeCharacteristics(
+        speed_kmh=40.0,           # Slow but steady
+        cost_per_km=0.05,         # $5 per 100 km (cheapest!)
+        carbon_per_km=0.003,      # Best carbon footprint
+        capacity_tons=500.0,      # Huge capacity
+        min_distance=500.0,       # For long distances only
+    ),
+    TransportationMode.FLIGHT: ModeCharacteristics(
+        speed_kmh=900.0,          # Very fast
+        cost_per_km=1.0,          # $100 per 100 km (most expensive!)
+        carbon_per_km=0.15,       # Worst carbon footprint
+        capacity_tons=50.0,       # Medium capacity
+        min_distance=300.0,       # For long intercontinental routes
+    ),
+}
+
+
 @dataclass
 class TrajectoryStep:
     """Single step in an agent trajectory."""
@@ -30,6 +102,11 @@ class TrajectoryStep:
     reward: float
     done: bool
     info: Dict[str, Any]
+    
+    # Transportation mode (new field)
+    mode: TransportationMode = TransportationMode.TRUCK
+    distance_km: float = 0.0
+    cargo_tons: float = 0.0
 
 
 @dataclass
@@ -117,6 +194,24 @@ class Grader:
         """
         self.trajectory.clear()
         for i, step_dict in enumerate(steps):
+            # Extract mode and distance/cargo from action or info
+            mode_str = step_dict.get("action", {}).get("mode")
+            if not mode_str:
+                mode_str = step_dict.get("info", {}).get("mode", "truck")
+            
+            try:
+                mode = TransportationMode(mode_str)
+            except (ValueError, TypeError):
+                mode = TransportationMode.TRUCK
+            
+            distance_km = step_dict.get("action", {}).get("distance", 0.0)
+            if not distance_km:
+                distance_km = step_dict.get("info", {}).get("distance", 0.0)
+            
+            cargo_tons = step_dict.get("action", {}).get("cargo_tons", 0.0)
+            if not cargo_tons:
+                cargo_tons = step_dict.get("info", {}).get("cargo_tons", 0.0)
+            
             step = TrajectoryStep(
                 step=step_dict.get("step", i),
                 cargo_id=step_dict.get("cargo_id", 0),
@@ -125,6 +220,9 @@ class Grader:
                 reward=step_dict.get("reward", 0.0),
                 done=step_dict.get("done", False),
                 info=step_dict.get("info", {}),
+                mode=mode,
+                distance_km=float(distance_km),
+                cargo_tons=float(cargo_tons),
             )
             self.trajectory.append(step)
         logger.info(f"Trajectory loaded with {len(self.trajectory)} steps")
@@ -207,20 +305,33 @@ class Grader:
         """
         Extract trilemma metrics from trajectory.
         
+        Uses transportation mode characteristics if available,
+        otherwise falls back to explicit metrics in step info.
+        
         Returns:
             TrilemmaMetrics with accumulated values
         """
         metrics = TrilemmaMetrics()
         
         for step in self.trajectory:
-            # Get trilemma from step info if available
-            if "trilemma" in step.info:
+            # Try to get mode-based metrics first
+            if step.distance_km > 0 or step.cargo_tons > 0:
+                # Use mode characteristics to calculate metrics
+                characteristics = MODE_CHARACTERISTICS[step.mode]
+                hours, cost, carbon = characteristics.calculate_metrics(
+                    step.distance_km,
+                    step.cargo_tons
+                )
+                metrics.add(hours=hours, cost=cost, carbon=carbon)
+            elif "trilemma" in step.info:
+                # Fallback: use explicit metrics from step info
                 trilemma = step.info["trilemma"]
                 metrics.add(
                     hours=trilemma.get("accumulated_hours", 0.0),
                     cost=trilemma.get("accumulated_cost", 0.0),
                     carbon=trilemma.get("accumulated_carbon", 0.0),
                 )
+            # else: step has no metrics, skip (contributes 0)
         
         return metrics
 
@@ -431,3 +542,61 @@ class Grader:
         """Reset grader state."""
         self.trajectory.clear()
         logger.info("Grader reset")
+    
+    @staticmethod
+    def get_mode_characteristics() -> Dict[str, Dict[str, Any]]:
+        """
+        Get characteristics of all transportation modes.
+        
+        Returns:
+            Dict with mode characteristics for reference
+        """
+        result = {}
+        for mode, chars in MODE_CHARACTERISTICS.items():
+            result[mode.value] = {
+                "speed_kmh": chars.speed_kmh,
+                "cost_per_km": chars.cost_per_km,
+                "carbon_per_km": chars.carbon_per_km,
+                "capacity_tons": chars.capacity_tons,
+                "min_distance": chars.min_distance,
+            }
+        return result
+    
+    @staticmethod
+    def example_trajectory(mode: str, distance_km: float, cargo_tons: float) -> Dict[str, Any]:
+        """
+        Generate an example trajectory for a specific mode.
+        
+        Args:
+            mode: Transportation mode (truck, rail, ship, flight)
+            distance_km: Distance to travel
+            cargo_tons: Cargo weight
+            
+        Returns:
+            Example trajectory step
+        """
+        try:
+            transport_mode = TransportationMode(mode)
+        except ValueError:
+            transport_mode = TransportationMode.TRUCK
+        
+        characteristics = MODE_CHARACTERISTICS[transport_mode]
+        hours, cost, carbon = characteristics.calculate_metrics(distance_km, cargo_tons)
+        
+        return {
+            "action": {
+                "mode": mode,
+                "distance": distance_km,
+                "cargo_tons": cargo_tons,
+            },
+            "info": {
+                "mode": mode,
+                "distance": distance_km,
+                "cargo_tons": cargo_tons,
+                "calculated_metrics": {
+                    "hours": hours,
+                    "cost": cost,
+                    "carbon": carbon,
+                }
+            }
+        }

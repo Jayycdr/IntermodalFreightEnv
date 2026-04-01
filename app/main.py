@@ -749,6 +749,72 @@ async def grade_trajectory(trajectory: dict = None):
         )
 
 
+@app.get("/modes")
+async def get_transportation_modes():
+    """
+    Get characteristics of all transportation modes.
+    
+    Returns mode profiles for truck, rail, ship, and flight.
+    """
+    try:
+        from app.api.grader import Grader
+        
+        modes = Grader.get_mode_characteristics()
+        
+        return BaseResponse(
+            success=True,
+            message="Transportation modes available",
+            data={
+                "modes": modes,
+                "descriptions": {
+                    "truck": "Fast, medium cost, medium capacity. For short-medium distances.",
+                    "rail": "Medium speed, low cost, high capacity. For medium-long distances.",
+                    "ship": "Slow, lowest cost, highest capacity. For long intercontinental routes.",
+                    "flight": "Fastest, highest cost, medium capacity. For urgent long-distance.",
+                }
+            }
+        )
+    except Exception as e:
+        return BaseResponse(
+            success=False,
+            message=f"Error fetching modes: {str(e)}",
+            data={}
+        )
+
+
+@app.post("/modes/example")
+async def get_mode_example(request: dict = None):
+    """
+    Get an example trajectory step for a specific transportation mode.
+    
+    Request: {"mode": "truck", "distance_km": 500, "cargo_tons": 10}
+    """
+    try:
+        from app.api.grader import Grader
+        
+        request = request or {}
+        mode = request.get("mode", "truck")
+        distance = float(request.get("distance_km", 500))
+        cargo = float(request.get("cargo_tons", 10))
+        
+        example = Grader.example_trajectory(mode, distance, cargo)
+        
+        return BaseResponse(
+            success=True,
+            message=f"Example trajectory for {mode}",
+            data={
+                "trajectory": [example],
+                "explanation": f"Shipping {cargo} tons by {mode} over {distance} km"
+            }
+        )
+    except Exception as e:
+        return BaseResponse(
+            success=False,
+            message=f"Error generating example: {str(e)}",
+            data={}
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
