@@ -11,7 +11,8 @@ from typing import Dict, List, Any, Optional
 import requests
 
 from baseline.agent import RandomAgent, GreedyAgent, DijkstraAgent, BaseAgent
-from app.api.grader import Grader, TaskType
+from app.api.grader import Grader
+from app.api.schemas import TaskType
 from app.utils.logger import logger
 
 
