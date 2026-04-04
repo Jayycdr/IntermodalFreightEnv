@@ -718,12 +718,13 @@ async def grade_trajectory(trajectory: dict = None):
     
     Accepts a trajectory object with step data and returns a score
     calculated using the weighted formula:
-    Score = 0.5×time + 0.3×cost + 0.2×carbon
+    Score = TRILEMMA_WEIGHT_TIME×time + TRILEMMA_WEIGHT_COST×cost + TRILEMMA_WEIGHT_CARBON×carbon
     
     Score is normalized to [0.0, 1.0] range.
     """
     try:
-        from app.api.grader import Grader, TaskType
+        from app.api.grader import Grader
+        from app.api.schemas import TaskType
         
         # Extract trajectory from request
         trajectory_data = trajectory if isinstance(trajectory, dict) else {}
@@ -857,7 +858,8 @@ async def run_baseline(config: dict = None):
         }
     """
     try:
-        from app.api.grader import Grader, TaskType
+        from app.api.grader import Grader
+        from app.api.schemas import TaskType
         from baseline.agent import RandomAgent
         
         config = config or {}
