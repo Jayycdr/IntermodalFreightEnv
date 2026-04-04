@@ -1,0 +1,385 @@
+# IntermodalFreightEnv Configuration File
+# Maps to FastAPI endpoints and environment settings
+
+# ============================================================================
+# API Server Configuration
+# ============================================================================
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  workers: 1
+  log_level: "info"
+  docs_url: "/docs"
+  redoc_url: "/redoc"
+
+# ============================================================================
+# Environment Configuration
+# ============================================================================
+environment:
+  num_nodes: 6
+  max_steps: 100
+  initial_demand: 100
+  disruption_probability: 0.1
+  seed: null  # null for random, integer for reproducible
+
+# ============================================================================
+# Default Network Configuration
+# ============================================================================
+network:
+  # Network nodes representing locations
+  nodes:
+    - id: 0
+      location: "Warehouse"
+      capacity: 1000.0
+    - id: 1
+      location: "Port A"
+      capacity: 500.0
+    - id: 2
+      location: "Rail Hub"
+      capacity: 800.0
+    - id: 3
+      location: "Air Terminal"
+      capacity: 200.0
+    - id: 4
+      location: "Truck Terminal"
+      capacity: 600.0
+    - id: 5
+      location: "Destination"
+      capacity: 400.0
+
+  # Network edges with trilemma attributes
+  edges:
+    # From Warehouse (0)
+    - source: 0
+      target: 1
+      time: 2.0      # hours
+      cost: 100.0    # dollars
+      carbon: 30.0   # kg CO2
+      name: "Warehouse -> Port A (Truck)"
+
+    - source: 0
+      target: 2
+      time: 1.5
+      cost: 80.0
+      carbon: 20.0
+      name: "Warehouse -> Rail Hub (Rail)"
+
+    - source: 0
+      target: 3
+      time: 0.5
+      cost: 200.0
+      carbon: 80.0
+      name: "Warehouse -> Air Terminal (Air)"
+
+    - source: 0
+      target: 4
+      time: 1.0
+      cost: 60.0
+      carbon: 25.0
+      name: "Warehouse -> Truck Terminal (Truck)"
+
+    # From Port A (1)
+    - source: 1
+      target: 5
+      time: 3.0
+      cost: 150.0
+      carbon: 50.0
+      name: "Port A -> Destination (Ship)"
+
+    - source: 1
+      target: 2
+      time: 1.0
+      cost: 50.0
+      carbon: 15.0
+      name: "Port A -> Rail Hub (Transfer)"
+
+    # From Rail Hub (2)
+    - source: 2
+      target: 5
+      time: 2.5
+      cost: 120.0
+      carbon: 35.0
+      name: "Rail Hub -> Destination (Rail)"
+
+    - source: 2
+      target: 4
+      time: 0.5
+      cost: 30.0
+      carbon: 10.0
+      name: "Rail Hub -> Truck Terminal (Transfer)"
+
+    # From Air Terminal (3)
+    - source: 3
+      target: 5
+      time: 1.5
+      cost: 180.0
+      carbon: 60.0
+      name: "Air Terminal -> Destination (Air)"
+
+    # From Truck Terminal (4)
+    - source: 4
+      target: 5
+      time: 2.0
+      cost: 100.0
+      carbon: 30.0
+      name: "Truck Terminal -> Destination (Truck)"
+
+# ============================================================================
+# Task Definitions and Optimization Targets
+# ============================================================================
+tasks:
+  task_1:
+    name: "Time Minimization"
+    description: "Minimize total transit time while delivering all cargos"
+    objective: "Minimize accumulated_hours"
+    timeout_seconds: 300
+    priority: "fast delivery"
+    endpoints:
+      - method: "POST"
+        path: "/task1/route"
+        description: "Route cargo for time minimization"
+      - method: "GET"
+        path: "/path?weight=time"
+        description: "Find fastest path"
+
+  task_2:
+    name: "Cost Minimization"
+    description: "Minimize total operational cost while delivering all cargos"
+    objective: "Minimize accumulated_cost"
+    timeout_seconds: 300
+    priority: "cost efficiency"
+    endpoints:
+      - method: "POST"
+        path: "/task2/route"
+        description: "Route cargo for cost minimization"
+      - method: "GET"
+        path: "/path?weight=cost"
+        description: "Find cheapest path"
+
+  task_3:
+    name: "Multimodal Routing"
+    description: "Optimize routing across transportation modes (truck, rail, ship, air) while balancing time, cost, and carbon"
+    objective: "Balance accumulated_hours, accumulated_cost, accumulated_carbon"
+    timeout_seconds: 300
+    priority: "balanced optimization"
+    cargo_modes:
+      - truck
+      - rail
+      - ship
+      - air
+    endpoints:
+      - method: "POST"
+        path: "/task3/route"
+        description: "Route cargo with multimodal optimization"
+      - method: "POST"
+        path: "/cargo/split"
+        description: "Split cargo across modes"
+      - method: "GET"
+        path: "/path?weight=carbon"
+        description: "Find greenest path"
+
+# ============================================================================
+# API Endpoints Mapping
+# ============================================================================
+endpoints:
+  # Health & Status
+  health:
+    method: "GET"
+    path: "/health"
+    description: "Health check endpoint"
+    response_time_ms: 10
+
+  status:
+    method: "GET"
+    path: "/status"
+    description: "Get API and environment status"
+    response_time_ms: 50
+
+  # Environment Management
+  reset:
+    method: "POST"
+    path: "/reset"
+    description: "Reset environment with optional seed and disruption probability"
+    request_schema: "ResetRequest"
+    response_schema: "ResetResponse"
+    response_time_ms: 100
+
+  get_state:
+    method: "GET"
+    path: "/state"
+    description: "Get current environment state"
+    response_schema: "EnvironmentState"
+    response_time_ms: 50
+
+  # Cargo Management
+  create_cargo:
+    method: "POST"
+    path: "/cargo/add"
+    description: "Create a new cargo shipment"
+    request_schema: "CargoRequest"
+    response_schema: "CargoResponse"
+    response_time_ms: 50
+
+  split_cargo:
+    method: "POST"
+    path: "/cargo/split"
+    description: "Split cargo into multiple shipments"
+    request_schema: "SplitCargoRequest"
+    response_schema: "BaseResponse"
+    response_time_ms: 75
+
+  # Task-Specific Routing
+  task1_route:
+    method: "POST"
+    path: "/task1/route"
+    description: "Route cargo for time minimization"
+    request_schema: "Task1Action"
+    response_schema: "BaseResponse"
+    response_time_ms: 100
+
+  task2_route:
+    method: "POST"
+    path: "/task2/route"
+    description: "Route cargo for cost minimization"
+    request_schema: "Task2Action"
+    response_schema: "BaseResponse"
+    response_time_ms: 100
+
+  task3_route:
+    method: "POST"
+    path: "/task3/route"
+    description: "Route cargo with multimodal optimization"
+    request_schema: "Task3Action"
+    response_schema: "BaseResponse"
+    response_time_ms: 100
+
+  # Simulation
+  step:
+    method: "POST"
+    path: "/step"
+    description: "Execute one simulation step"
+    request_schema: "StepRequest"
+    response_schema: "StepResponse"
+    response_time_ms: 100
+
+  run_episode:
+    method: "POST"
+    path: "/run-episode"
+    description: "Run complete episode to completion"
+    response_schema: "BaseResponse"
+    response_time_ms: 5000
+
+  # Evaluation
+  evaluate:
+    method: "POST"
+    path: "/evaluate"
+    description: "Evaluate episode for specific task"
+    response_schema: "EvaluationResult"
+    response_time_ms: 100
+
+  # Grader
+  grader:
+    method: "POST"
+    path: "/grader"
+    description: "Grade a trajectory and return score"
+    response_schema: "GraderResponse"
+    response_time_ms: 100
+
+  # Tasks
+  tasks:
+    method: "GET"
+    path: "/tasks"
+    description: "Get all available tasks with action schemas"
+    response_schema: "TasksResponse"
+    response_time_ms: 50
+
+  # Pathfinding
+  find_path:
+    method: "GET"
+    path: "/path"
+    description: "Find shortest path with weight metric"
+    query_params:
+      - name: "origin"
+        type: "int"
+        required: true
+        description: "Origin node ID"
+      - name: "destination"
+        type: "int"
+        required: true
+        description: "Destination node ID"
+      - name: "weight"
+        type: "string"
+        required: false
+        default: "time"
+        enum: ["time", "cost", "carbon"]
+        description: "Weight metric for optimization"
+    response_schema: "BaseResponse"
+    response_time_ms: 100
+
+# ============================================================================
+# Trilemma Optimization Configuration
+# ============================================================================
+trilemma:
+  # Three competing objectives
+  objectives:
+    - name: "time"
+      unit: "hours"
+      metric: "accumulated_hours"
+      lower_is_better: true
+      weight_task1: 1.0
+      weight_task2: 0.2
+      weight_task3: 0.33
+
+    - name: "cost"
+      unit: "dollars"
+      metric: "accumulated_cost"
+      lower_is_better: true
+      weight_task1: 0.2
+      weight_task2: 1.0
+      weight_task3: 0.33
+
+    - name: "carbon"
+      unit: "kg CO2"
+      metric: "accumulated_carbon"
+      lower_is_better: true
+      weight_task1: 0.2
+      weight_task2: 0.2
+      weight_task3: 0.34
+
+  # Disruption dynamics
+  disruptions:
+    enabled: true
+    probability: 0.1  # Probability of node/edge disruption per reset
+    node_recovery_time: null  # null = permanent
+    edge_recovery_time: null  # null = permanent
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+logging:
+  level: "INFO"
+  format: "%(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d - %(message)s"
+  files:
+    app: "logs/app.log"
+    error: "logs/errors.log"
+  file_rotation: "500 MB"
+  retention_days: 10
+
+# ============================================================================
+# Performance & Monitoring
+# ============================================================================
+performance:
+  response_timeout_seconds: 30
+  max_concurrent_requests: 100
+  enable_metrics: true
+  metrics_endpoint: "/metrics"
+
+# ============================================================================
+# Testing Configuration
+# ============================================================================
+testing:
+  default_seed: 42
+  test_network: true
+  generate_test_episodes: true
+  num_test_cargos: 5
