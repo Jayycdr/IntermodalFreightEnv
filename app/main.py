@@ -6,6 +6,7 @@ Supports three optimization tasks via different action schemas.
 """
 
 from typing import Optional
+import requests
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -812,6 +813,149 @@ async def get_mode_example(request: dict = None):
             success=False,
             message=f"Error generating example: {str(e)}",
             data={}
+        )
+
+
+@app.post("/baseline")
+async def run_baseline(config: dict = None):
+    """
+    Run baseline agents and return baseline scores for all 3 tasks.
+    
+    This endpoint triggers baseline inference for all 3 tasks and returns
+    baseline scores that can be compared against agent performance.
+    
+    Returns:
+        {
+            "success": true,
+            "message": "Baseline scores computed",
+            "data": {
+                "task_1_score": float,
+                "task_2_score": float,
+                "task_3_score": float
+            }
+        }
+    """
+    try:
+        from app.api.grader import Grader, TaskType
+        from baseline.agent import RandomAgent
+        
+        config = config or {}
+        max_steps = config.get("max_steps", 50)
+        num_cargos = config.get("num_cargos", 2)
+        
+        # Dictionary to store scores for each task
+        baseline_scores = {
+            "task_1_score": 0.0,
+            "task_2_score": 0.0,
+            "task_3_score": 0.0,
+        }
+        
+        # Run baseline for each task
+        task_configs = [
+            ("task_1_time", TaskType.TASK_1_TIME, "task_1_score"),
+            ("task_2_cost", TaskType.TASK_2_COST, "task_2_score"),
+            ("task_3_multimodal", TaskType.TASK_3_MULTIMODAL, "task_3_score"),
+        ]
+        
+        for task_type_str, task_type_enum, score_key in task_configs:
+            try:
+                logger.info(f"Running baseline for {task_type_str}")
+                
+                # Reset environment for this task
+                try:
+                    reset_response = requests.post(f"http://localhost:8000/reset")
+                    reset_response.raise_for_status()
+                except Exception as e:
+                    logger.warning(f"Reset failed for {task_type_str}: {e}")
+                
+                # Create a simple random agent trajectory
+                trajectory = []
+                agent = RandomAgent(agent_id=f"baseline_{task_type_str}", api_url="http://localhost:8000")
+                
+                # Run for max_steps or until done
+                for step in range(max_steps):
+                    try:
+                        state_response = requests.get("http://localhost:8000/state")
+                        state_response.raise_for_status()
+                        state = state_response.json()
+                        
+                        # Get random action from agent
+                        action = agent.select_action(state)
+                        
+                        # Execute action based on task type
+                        if task_type_str == "task_1_time":
+                            action_response = requests.post(
+                                "http://localhost:8000/task1/route",
+                                json=action
+                            )
+                        elif task_type_str == "task_2_cost":
+                            action_response = requests.post(
+                                "http://localhost:8000/task2/route",
+                                json=action
+                            )
+                        else:  # task_3
+                            action_response = requests.post(
+                                "http://localhost:8000/task3/route",
+                                json=action
+                            )
+                        
+                        if action_response.ok:
+                            result = action_response.json()
+                            reward = result.get("reward", 0.0)
+                            done = result.get("done", False)
+                            
+                            # Record step
+                            trajectory.append({
+                                "step": step,
+                                "action": action,
+                                "reward": reward,
+                                "done": done
+                            })
+                            
+                            if done:
+                                logger.info(f"Baseline {task_type_str} completed at step {step}")
+                                break
+                    except Exception as e:
+                        logger.warning(f"Step {step} failed for {task_type_str}: {e}")
+                        break
+                
+                # Grade the trajectory
+                if trajectory:
+                    grader = Grader()
+                    grader.load_trajectory(trajectory)
+                    evaluation = grader.evaluate(task_type=task_type_enum)
+                    
+                    # Normalize score to [0, 1]
+                    score = max(0.0, min(1.0, evaluation.efficiency_score / 100.0))
+                    baseline_scores[score_key] = score
+                    
+                    logger.info(f"Baseline {task_type_str} score: {score:.4f}")
+                else:
+                    logger.warning(f"No trajectory collected for {task_type_str}")
+                    baseline_scores[score_key] = 0.0
+                    
+            except Exception as e:
+                logger.error(f"Baseline failed for {task_type_str}: {e}")
+                baseline_scores[score_key] = 0.0
+                # Continue with next task even if this one fails
+                continue
+        
+        return BaseResponse(
+            success=True,
+            message="Baseline scores computed for all 3 tasks",
+            data=baseline_scores
+        )
+        
+    except Exception as e:
+        logger.error(f"Baseline endpoint error: {e}")
+        return BaseResponse(
+            success=False,
+            message=f"Baseline error: {str(e)}",
+            data={
+                "task_1_score": 0.0,
+                "task_2_score": 0.0,
+                "task_3_score": 0.0,
+            }
         )
 
 
