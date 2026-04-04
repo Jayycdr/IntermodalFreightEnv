@@ -155,8 +155,29 @@ app = create_app()
 
 
 # ============================================================================
-# Health & Status Endpoints
+# Root & Health Endpoints
 # ============================================================================
+
+@app.get("/", response_model=BaseResponse)
+async def root():
+    """Root endpoint - returns API information."""
+    return BaseResponse(
+        success=True,
+        message="Intermodal Freight Environment API",
+        data={
+            "version": "1.0.0",
+            "name": "IntermodalFreightEnv",
+            "endpoints": {
+                "health": "/health",
+                "status": "/status",
+                "tasks": "/tasks",
+                "modes": "/modes",
+                "docs": "/docs",
+                "state": "/state"
+            }
+        }
+    )
+
 
 @app.get("/health", response_model=BaseResponse)
 async def health_check():
