@@ -6,6 +6,7 @@ Supports three optimization tasks via different action schemas.
 """
 
 from typing import Optional
+import requests
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -31,7 +32,8 @@ from app.api.schemas import (
     NodeData,
     EdgeData,
 )
-from app.engine.core_env import FreightEnvironment, EnvironmentConfig, TrilemmaCounters
+from app.engine.core_env import FreightEnvironment, EnvironmentConfig
+from app.api.grader import TrilemmaMetrics
 
 
 # ============================================================================
@@ -615,6 +617,346 @@ async def find_shortest_path(origin: int, destination: int, weight: str = "time"
     except Exception as e:
         logger.error(f"Pathfinding failed: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# Task & Grading Endpoints
+# ============================================================================
+
+@app.get("/tasks")
+async def get_tasks():
+    """
+    Get all available tasks with their action schemas.
+    
+    Returns 3 tasks:
+    - Task 1: Time Minimization
+    - Task 2: Cost Minimization
+    - Task 3: Multimodal Optimization
+    """
+    tasks = [
+        {
+            "name": "Task 1: Time Minimization",
+            "id": "task_1_time",
+            "description": "Minimize total transit time while delivering all cargos",
+            "objective": "minimize-time",
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["task_1_time"]},
+                    "cargo_id": {"type": "integer"},
+                    "path": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["task_type", "cargo_id", "path"]
+            }
+        },
+        {
+            "name": "Task 2: Cost Minimization",
+            "id": "task_2_cost",
+            "description": "Minimize total operational cost while delivering all cargos",
+            "objective": "minimize-cost",
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["task_2_cost"]},
+                    "cargo_id": {"type": "integer"},
+                    "path": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["task_type", "cargo_id", "path"]
+            }
+        },
+        {
+            "name": "Task 3: Multimodal Optimization",
+            "id": "task_3_multimodal",
+            "description": "Optimize routing across transportation modes while balancing time, cost, and carbon",
+            "objective": "balance-trilemma",
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["task_3_multimodal"]},
+                    "cargo_id": {"type": "integer"},
+                    "cargo_type": {"type": "string", "enum": ["truck", "rail", "ship", "air"]},
+                    "path": {"type": "array", "items": {"type": "string"}},
+                    "split_at": {"type": "array", "items": {"type": "integer"}}
+                },
+                "required": ["task_type", "cargo_id", "cargo_type", "path", "split_at"]
+            }
+        }
+    ]
+    
+    return BaseResponse(
+        success=True,
+        message="3 tasks available",
+        data={"tasks": tasks, "count": 3}
+    )
+
+
+@app.post("/grader")
+async def grade_trajectory(trajectory: dict = None):
+    """
+    Grade a trajectory and return a score.
+    
+    Accepts a trajectory object with step data and returns a score
+    calculated using the weighted formula:
+    Score = 0.5×time + 0.3×cost + 0.2×carbon
+    
+    Score is normalized to [0.0, 1.0] range.
+    """
+    try:
+        from app.api.grader import Grader, TaskType
+        
+        # Extract trajectory from request
+        trajectory_data = trajectory if isinstance(trajectory, dict) else {}
+        trajectory_steps = trajectory_data.get("trajectory", []) or trajectory_data.get("steps", [])
+        task_type = trajectory_data.get("task_type", "task_3_multimodal")
+        
+        # Map task_type to TaskType enum
+        task_type_map = {
+            "task_1_time": TaskType.TASK_1_TIME,
+            "task_2_cost": TaskType.TASK_2_COST,
+            "task_3_multimodal": TaskType.TASK_3_MULTIMODAL,
+        }
+        task = task_type_map.get(task_type, TaskType.TASK_3_MULTIMODAL)
+        
+        # Initialize grader and evaluate
+        grader = Grader()
+        grader.load_trajectory(trajectory_steps)
+        result = grader.evaluate(task_type=task)
+        
+        # Normalize score to [0, 1]
+        normalized_score = max(0.0, min(1.0, result.efficiency_score / 100.0))
+        
+        return BaseResponse(
+            success=True,
+            message=f"Trajectory graded ({result.task_type.value})",
+            data={
+                "score": normalized_score,
+                "efficiency_score": result.efficiency_score,
+                "weighted_score": result.weighted_score,
+                "metrics": {
+                    "accumulated_hours": result.raw_metrics.accumulated_hours,
+                    "accumulated_cost": result.raw_metrics.accumulated_cost,
+                    "accumulated_carbon": result.raw_metrics.accumulated_carbon,
+                },
+                "cargos_delivered": result.cargos_delivered,
+                "task_type": result.task_type.value,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Grading failed: {str(e)}")
+        return BaseResponse(
+            success=False,
+            message=f"Grading error: {str(e)}",
+            data={"score": 0.0}
+        )
+
+
+@app.get("/modes")
+async def get_transportation_modes():
+    """
+    Get characteristics of all transportation modes.
+    
+    Returns mode profiles for truck, rail, ship, and flight.
+    """
+    try:
+        from app.api.grader import Grader
+        
+        modes = Grader.get_mode_characteristics()
+        
+        return BaseResponse(
+            success=True,
+            message="Transportation modes available",
+            data={
+                "modes": modes,
+                "descriptions": {
+                    "truck": "Fast, medium cost, medium capacity. For short-medium distances.",
+                    "rail": "Medium speed, low cost, high capacity. For medium-long distances.",
+                    "ship": "Slow, lowest cost, highest capacity. For long intercontinental routes.",
+                    "flight": "Fastest, highest cost, medium capacity. For urgent long-distance.",
+                }
+            }
+        )
+    except Exception as e:
+        return BaseResponse(
+            success=False,
+            message=f"Error fetching modes: {str(e)}",
+            data={}
+        )
+
+
+@app.post("/modes/example")
+async def get_mode_example(request: dict = None):
+    """
+    Get an example trajectory step for a specific transportation mode.
+    
+    Request: {"mode": "truck", "distance_km": 500, "cargo_tons": 10}
+    """
+    try:
+        from app.api.grader import Grader
+        
+        request = request or {}
+        mode = request.get("mode", "truck")
+        distance = float(request.get("distance_km", 500))
+        cargo = float(request.get("cargo_tons", 10))
+        
+        example = Grader.example_trajectory(mode, distance, cargo)
+        
+        return BaseResponse(
+            success=True,
+            message=f"Example trajectory for {mode}",
+            data={
+                "trajectory": [example],
+                "explanation": f"Shipping {cargo} tons by {mode} over {distance} km"
+            }
+        )
+    except Exception as e:
+        return BaseResponse(
+            success=False,
+            message=f"Error generating example: {str(e)}",
+            data={}
+        )
+
+
+@app.post("/baseline")
+async def run_baseline(config: dict = None):
+    """
+    Run baseline agents and return baseline scores for all 3 tasks.
+    
+    This endpoint triggers baseline inference for all 3 tasks and returns
+    baseline scores that can be compared against agent performance.
+    
+    Returns:
+        {
+            "success": true,
+            "message": "Baseline scores computed",
+            "data": {
+                "task_1_score": float,
+                "task_2_score": float,
+                "task_3_score": float
+            }
+        }
+    """
+    try:
+        from app.api.grader import Grader, TaskType
+        from baseline.agent import RandomAgent
+        
+        config = config or {}
+        max_steps = config.get("max_steps", 50)
+        num_cargos = config.get("num_cargos", 2)
+        
+        # Dictionary to store scores for each task
+        baseline_scores = {
+            "task_1_score": 0.0,
+            "task_2_score": 0.0,
+            "task_3_score": 0.0,
+        }
+        
+        # Run baseline for each task
+        task_configs = [
+            ("task_1_time", TaskType.TASK_1_TIME, "task_1_score"),
+            ("task_2_cost", TaskType.TASK_2_COST, "task_2_score"),
+            ("task_3_multimodal", TaskType.TASK_3_MULTIMODAL, "task_3_score"),
+        ]
+        
+        for task_type_str, task_type_enum, score_key in task_configs:
+            try:
+                logger.info(f"Running baseline for {task_type_str}")
+                
+                # Reset environment for this task
+                try:
+                    reset_response = requests.post(f"http://localhost:8000/reset")
+                    reset_response.raise_for_status()
+                except Exception as e:
+                    logger.warning(f"Reset failed for {task_type_str}: {e}")
+                
+                # Create a simple random agent trajectory
+                trajectory = []
+                agent = RandomAgent(agent_id=f"baseline_{task_type_str}", api_url="http://localhost:8000")
+                
+                # Run for max_steps or until done
+                for step in range(max_steps):
+                    try:
+                        state_response = requests.get("http://localhost:8000/state")
+                        state_response.raise_for_status()
+                        state = state_response.json()
+                        
+                        # Get random action from agent
+                        action = agent.select_action(state)
+                        
+                        # Execute action based on task type
+                        if task_type_str == "task_1_time":
+                            action_response = requests.post(
+                                "http://localhost:8000/task1/route",
+                                json=action
+                            )
+                        elif task_type_str == "task_2_cost":
+                            action_response = requests.post(
+                                "http://localhost:8000/task2/route",
+                                json=action
+                            )
+                        else:  # task_3
+                            action_response = requests.post(
+                                "http://localhost:8000/task3/route",
+                                json=action
+                            )
+                        
+                        if action_response.ok:
+                            result = action_response.json()
+                            reward = result.get("reward", 0.0)
+                            done = result.get("done", False)
+                            
+                            # Record step
+                            trajectory.append({
+                                "step": step,
+                                "action": action,
+                                "reward": reward,
+                                "done": done
+                            })
+                            
+                            if done:
+                                logger.info(f"Baseline {task_type_str} completed at step {step}")
+                                break
+                    except Exception as e:
+                        logger.warning(f"Step {step} failed for {task_type_str}: {e}")
+                        break
+                
+                # Grade the trajectory
+                if trajectory:
+                    grader = Grader()
+                    grader.load_trajectory(trajectory)
+                    evaluation = grader.evaluate(task_type=task_type_enum)
+                    
+                    # Normalize score to [0, 1]
+                    score = max(0.0, min(1.0, evaluation.efficiency_score / 100.0))
+                    baseline_scores[score_key] = score
+                    
+                    logger.info(f"Baseline {task_type_str} score: {score:.4f}")
+                else:
+                    logger.warning(f"No trajectory collected for {task_type_str}")
+                    baseline_scores[score_key] = 0.0
+                    
+            except Exception as e:
+                logger.error(f"Baseline failed for {task_type_str}: {e}")
+                baseline_scores[score_key] = 0.0
+                # Continue with next task even if this one fails
+                continue
+        
+        return BaseResponse(
+            success=True,
+            message="Baseline scores computed for all 3 tasks",
+            data=baseline_scores
+        )
+        
+    except Exception as e:
+        logger.error(f"Baseline endpoint error: {e}")
+        return BaseResponse(
+            success=False,
+            message=f"Baseline error: {str(e)}",
+            data={
+                "task_1_score": 0.0,
+                "task_2_score": 0.0,
+                "task_3_score": 0.0,
+            }
+        )
 
 
 if __name__ == "__main__":
