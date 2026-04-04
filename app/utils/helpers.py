@@ -327,3 +327,244 @@ def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 1.0):
             
         return wrapper
     return decorator
+
+
+# ============================================================================
+# Agent Learning Helpers (NEW: For RL Agent Training)
+# ============================================================================
+
+def normalize_state(
+    state: Dict[str, Any],
+    min_vals: Optional[Dict[str, float]] = None,
+    max_vals: Optional[Dict[str, float]] = None
+) -> Dict[str, float]:
+    """
+    Normalize environment state for agent learning.
+    
+    Converts raw state values to [0, 1] range using min-max normalization.
+    This helps agents learn better by having bounded, comparable features.
+    
+    Args:
+        state: Raw environment state
+        min_vals: Optional dict of minimum values per key
+        max_vals: Optional dict of maximum values per key
+        
+    Returns:
+        Normalized state dict with values in [0, 1] range
+        
+    Example:
+        >>> state = {"distance": 500, "cost": 150, "carbon": 50}
+        >>> min_v = {"distance": 0, "cost": 0, "carbon": 0}
+        >>> max_v = {"distance": 1000, "cost": 500, "carbon": 100}
+        >>> normalized = normalize_state(state, min_v, max_v)
+        >>> # Result: {"distance": 0.5, "cost": 0.3, "carbon": 0.5}
+    """
+    normalized = {}
+    
+    for key, value in state.items():
+        if isinstance(value, (int, float)):
+            # Use provided bounds or default to open interval
+            min_val = min_vals.get(key, 0.0) if min_vals else 0.0
+            max_val = max_vals.get(key, 1.0) if max_vals else 1.0
+            
+            # Handle edge case where min == max
+            if max_val - min_val == 0:
+                normalized[key] = 0.5  # Default to middle
+            else:
+                # Min-max normalization to [0, 1]
+                norm_value = (value - min_val) / (max_val - min_val)
+                # Clip to [0, 1] range
+                normalized[key] = max(0.0, min(1.0, norm_value))
+        else:
+            # Keep non-numeric values as-is
+            normalized[key] = value
+    
+    return normalized
+
+
+def state_to_vector(state: Dict[str, Any], key_order: Optional[List[str]] = None) -> List[float]:
+    """
+    Convert normalized state dict to feature vector for neural networks.
+    
+    Args:
+        state: Normalized state dictionary
+        key_order: Specific order for extracting features (for consistency)
+        
+    Returns:
+        List of float values for use in ML models
+        
+    Example:
+        >>> state = {"distance": 0.5, "cost": 0.3, "carbon": 0.5}
+        >>> vector = state_to_vector(state, ["distance", "cost", "carbon"])
+        >>> # Result: [0.5, 0.3, 0.5]
+    """
+    if key_order is None:
+        # Use sorted keys for consistency
+        key_order = sorted([k for k, v in state.items() if isinstance(v, (int, float))])
+    
+    vector = []
+    for key in key_order:
+        if key in state and isinstance(state[key], (int, float)):
+            vector.append(float(state[key]))
+    
+    return vector
+
+
+def calculate_state_statistics(
+    states: List[Dict[str, Any]]
+) -> tuple:
+    """
+    Calculate min/max values from a list of states for normalization.
+    
+    Useful for determining the bounds needed for normalize_state().
+    
+    Args:
+        states: List of state dictionaries from multiple episodes
+        
+    Returns:
+        Tuple of (min_vals, max_vals) dictionaries
+        
+    Example:
+        >>> states = [
+        ...     {"distance": 100, "cost": 50},
+        ...     {"distance": 500, "cost": 150},
+        ...     {"distance": 300, "cost": 80},
+        ... ]
+        >>> min_v, max_v = calculate_state_statistics(states)
+        >>> # min_v: {"distance": 100, "cost": 50}
+        >>> # max_v: {"distance": 500, "cost": 150}
+    """
+    if not states:
+        return {}, {}
+    
+    min_vals = {}
+    max_vals = {}
+    
+    for state in states:
+        for key, value in state.items():
+            if isinstance(value, (int, float)):
+                if key not in min_vals:
+                    min_vals[key] = value
+                    max_vals[key] = value
+                else:
+                    min_vals[key] = min(min_vals[key], value)
+                    max_vals[key] = max(max_vals[key], value)
+    
+    return min_vals, max_vals
+
+
+def extract_trilemma_metrics(state: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Extract trilemma metrics (time, cost, carbon) from environment state.
+    
+    Makes it easy for agents to access the three key optimization metrics.
+    
+    Args:
+        state: Environment state from API
+        
+    Returns:
+        Dict with 'time', 'cost', 'carbon' keys (normalized to [0, 1])
+        
+    Example:
+        >>> state = {"trilemma": {"accumulated_hours": 10.0, ...}}
+        >>> metrics = extract_trilemma_metrics(state)
+        >>> # Can use for reward calculation or state representation
+    """
+    trilemma = state.get("trilemma", {})
+    
+    return {
+        "time": trilemma.get("accumulated_hours", 0.0),
+        "cost": trilemma.get("accumulated_cost", 0.0),
+        "carbon": trilemma.get("accumulated_carbon", 0.0),
+    }
+
+
+def format_for_agent_logging(
+    episode: int,
+    step: int,
+    reward: float,
+    state: Dict[str, Any],
+    done: bool
+) -> str:
+    """
+    Format episode data for agent learning logs.
+    
+    Args:
+        episode: Episode number
+        step: Step number
+        reward: Step reward
+        state: Environment state
+        done: Whether episode is done
+        
+    Returns:
+        Formatted log string
+    """
+    trilemma = state.get("trilemma", {})
+    return (
+        f"Episode {episode:3d} | Step {step:4d} | "
+        f"Reward {reward:7.4f} | "
+        f"Time {trilemma.get('accumulated_hours', 0.0):6.2f}h | "
+        f"Cost ${trilemma.get('accumulated_cost', 0.0):7.2f} | "
+        f"Carbon {trilemma.get('accumulated_carbon', 0.0):6.2f}t | "
+        f"Done {done}"
+    )
+
+
+# ============================================================================
+# Agent Action Helpers
+# ============================================================================
+
+def build_task1_action(cargo_id: int, path: List[int]) -> Dict[str, Any]:
+    """
+    Build a Task 1 (time minimization) action.
+    
+    Args:
+        cargo_id: ID of cargo to route
+        path: List of node IDs for route
+        
+    Returns:
+        Task 1 action dictionary
+    """
+    return {
+        "task_type": "task_1_time",
+        "cargo_id": cargo_id,
+        "path": path,
+    }
+
+
+def build_task2_action(cargo_id: int, path: List[int]) -> Dict[str, Any]:
+    """
+    Build a Task 2 (cost minimization) action.
+    
+    Args:
+        cargo_id: ID of cargo to route
+        path: List of node IDs for route
+        
+    Returns:
+        Task 2 action dictionary
+    """
+    return {
+        "task_type": "task_2_cost",
+        "cargo_id": cargo_id,
+        "path": path,
+    }
+
+
+def build_task3_action(cargo_id: int, modes: List[str], path: List[int]) -> Dict[str, Any]:
+    """
+    Build a Task 3 (multimodal optimization) action.
+    
+    Args:
+        cargo_id: ID of cargo to route
+        modes: List of transportation modes per edge
+        path: List of node IDs for route
+        
+    Returns:
+        Task 3 action dictionary
+    """
+    return {
+        "task_type": "task_3_multimodal",
+        "cargo_id": cargo_id,
+        "modes": modes,
+        "path": path,
+    }
