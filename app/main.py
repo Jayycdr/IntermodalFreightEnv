@@ -6,10 +6,8 @@ Supports three optimization tasks via different action schemas.
 """
 
 from typing import Optional
-import requests
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from app.utils.logger import logger
 from app.api.schemas import (
@@ -33,7 +31,6 @@ from app.api.schemas import (
     EdgeData,
 )
 from app.engine.core_env import FreightEnvironment, EnvironmentConfig
-from app.api.grader import TrilemmaMetrics
 
 
 # ============================================================================
@@ -74,7 +71,9 @@ def get_env() -> FreightEnvironment:
             ],
         }
         _env.setup_network(default_network)
-        logger.info("Default network configured")
+        # Reset environment after network setup to initialize cargos
+        _env.reset()
+        logger.info("Default network configured and environment reset")
     
     return _env
 
@@ -196,6 +195,138 @@ async def status_endpoint():
             "step": env.current_step,
             "active_cargos": len(env.active_cargos),
             "completed_cargos": len(env.completed_cargos),
+        }
+    )
+
+
+@app.get("/state-descriptor", response_model=BaseResponse)
+async def get_state_descriptor():
+    """
+    Get the state space descriptor for agent learning.
+    
+    Returns information about what the state space contains,
+    useful for agents to understand the observation space.
+    
+    This endpoint helps agents understand:
+    - What fields are in the state
+    - What ranges/units each field has
+    - What metrics are tracked (trilemma)
+    - Network structure (nodes, edges)
+    """
+    return BaseResponse(
+        success=True,
+        message="State space descriptor for agent learning",
+        data={
+            "state_fields": {
+                "step": {
+                    "description": "Current step number in episode",
+                    "type": "integer",
+                    "min": 0,
+                    "max": 1000,
+                    "unit": "steps"
+                },
+                "active_cargos": {
+                    "description": "Number of cargos currently being transported",
+                    "type": "integer",
+                    "min": 0,
+                    "max": 100,
+                    "unit": "count"
+                },
+                "completed_cargos": {
+                    "description": "Number of cargos successfully delivered",
+                    "type": "integer",
+                    "min": 0,
+                    "max": 100,
+                    "unit": "count"
+                },
+                "trilemma": {
+                    "description": "Key optimization metrics",
+                    "type": "object",
+                    "fields": {
+                        "accumulated_hours": {
+                            "description": "Total transit time",
+                            "type": "float",
+                            "min": 0.0,
+                            "max": 10000.0,
+                            "unit": "hours"
+                        },
+                        "accumulated_cost": {
+                            "description": "Total transportation cost",
+                            "type": "float",
+                            "min": 0.0,
+                            "max": 100000.0,
+                            "unit": "dollars"
+                        },
+                        "accumulated_carbon": {
+                            "description": "Total CO2 emissions",
+                            "type": "float",
+                            "min": 0.0,
+                            "max": 10000.0,
+                            "unit": "tons"
+                        }
+                    }
+                },
+                "network": {
+                    "description": "Network topology with nodes and edges",
+                    "type": "object",
+                    "fields": {
+                        "nodes": {
+                            "description": "List of network nodes",
+                            "type": "array",
+                            "item_fields": {
+                                "id": "Node identifier",
+                                "location": "Geographic location name",
+                                "capacity": "Max cargo capacity"
+                            }
+                        },
+                        "edges": {
+                            "description": "List of transportation routes",
+                            "type": "array",
+                            "item_fields": {
+                                "source": "Starting node",
+                                "target": "Destination node",
+                                "time": "Transit time in hours",
+                                "cost": "Cost in dollars",
+                                "carbon": "CO2 emissions in tons",
+                                "disabled": "Whether route is disrupted"
+                            }
+                        }
+                    }
+                }
+            },
+            "reward_function": {
+                "type": "weighted_trilemma",
+                "description": "Reward = -(0.5*time + 0.3*cost + 0.2*carbon)",
+                "formula": "-( WEIGHT_TIME * hours + WEIGHT_COST * dollars + WEIGHT_CARBON * tons )",
+                "weights": {
+                    "time": 0.5,
+                    "cost": 0.3,
+                    "carbon": 0.2
+                },
+                "note": "Negative reward because agents minimize cost; lower cost = higher reward"
+            },
+            "action_schema": {
+                "description": "Actions available to agents",
+                "tasks": {
+                    "task_1_time": {
+                        "objective": "Minimize transit time",
+                        "action_fields": ["task_type", "cargo_id", "path"]
+                    },
+                    "task_2_cost": {
+                        "objective": "Minimize cost",
+                        "action_fields": ["task_type", "cargo_id", "path"]
+                    },
+                    "task_3_multimodal": {
+                        "objective": "Balance time, cost, and carbon (trilemma)",
+                        "action_fields": ["task_type", "cargo_id", "path", "modes"]
+                    }
+                }
+            },
+            "episode_mechanics": {
+                "max_steps": 1000,
+                "reset_clears": ["step", "active_cargos", "completed_cargos", "trilemma"],
+                "done_condition": "step >= max_steps or all cargos delivered"
+            }
         }
     )
 
