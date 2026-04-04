@@ -5,10 +5,17 @@ Provides utilities for:
 - HTTP requests with error handling and timeouts
 - Response creation
 - Network/graph operations
+
+Usage:
+    from app.utils.helpers import safe_request, success_response, safe_get
+    
+    response = safe_request("GET", "http://api/endpoint", timeout=5.0)
+    api_response = success_response("Operation completed", {"result": data})
+    value = safe_get(data, "key", default="default_value")
 """
 
 import requests
-from typing import Dict, Any, Optional, List, Type, TypeVar
+from typing import Dict, Any, Optional, List, Type, TypeVar, Callable
 from functools import wraps
 import time
 
@@ -18,6 +25,25 @@ from app.exceptions import RequestTimeoutError, RequestFailedError, SchemaValida
 from app.api.schemas import BaseResponse
 
 T = TypeVar("T")
+
+
+# ============================================================================
+# Type Definitions
+# ============================================================================
+
+class HTTPResponse(dict):
+    """Type hint for HTTP response dictionaries."""
+    pass
+
+
+class NetworkNode(dict):
+    """Type hint for network node configuration."""
+    pass
+
+
+class NetworkEdge(dict):
+    """Type hint for network edge configuration."""
+    pass
 
 
 # ============================================================================
