@@ -2,7 +2,7 @@
 Grading and evaluation logic for the freight environment.
 
 Evaluates agent performance against the trajectory using the weighted formula:
-    Score = 0.5×time + 0.3×cost + 0.2×carbon
+    Score = TRILEMMA_WEIGHT_TIME×time + TRILEMMA_WEIGHT_COST×cost + TRILEMMA_WEIGHT_CARBON×carbon
 """
 
 from typing import Dict, Any, List, Optional, Tuple
@@ -10,13 +10,21 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from app.utils.logger import logger
-
-
-class TaskType(str, Enum):
-    """Task types for evaluation."""
-    TASK_1_TIME = "task_1_time"
-    TASK_2_COST = "task_2_cost"
-    TASK_3_MULTIMODAL = "task_3_multimodal"
+from app.constants import (
+    TRILEMMA_WEIGHT_TIME,
+    TRILEMMA_WEIGHT_COST,
+    TRILEMMA_WEIGHT_CARBON,
+    EFFICIENCY_EXCELLENT_THRESHOLD,
+    EFFICIENCY_GOOD_THRESHOLD,
+    EFFICIENCY_FAIR_THRESHOLD,
+    EFFICIENCY_SCORE_METRIC_DIVISOR,
+    EFFICIENCY_DELIVERY_BONUS,
+    EFFICIENCY_STEP_THRESHOLD,
+    EFFICIENCY_STEP_PENALTY_PER_STEP,
+    EFFICIENCY_SCORE_MAX,
+    EFFICIENCY_SCORE_MIN,
+)
+from app.api.schemas import TaskType
 
 
 class TransportationMode(str, Enum):
@@ -338,7 +346,7 @@ class Grader:
     def _calculate_weighted_score(self, metrics: TrilemmaMetrics) -> float:
         """
         Calculate weighted score using the formula:
-        Score = 0.5×time + 0.3×cost + 0.2×carbon
+        Score = TRILEMMA_WEIGHT_TIME×time + TRILEMMA_WEIGHT_COST×cost + TRILEMMA_WEIGHT_CARBON×carbon
         
         Args:
             metrics: TrilemmaMetrics
@@ -347,9 +355,9 @@ class Grader:
             Weighted score (lower is better)
         """
         score = (
-            0.5 * metrics.accumulated_hours +
-            0.3 * metrics.accumulated_cost +
-            0.2 * metrics.accumulated_carbon
+            TRILEMMA_WEIGHT_TIME * metrics.accumulated_hours +
+            TRILEMMA_WEIGHT_COST * metrics.accumulated_cost +
+            TRILEMMA_WEIGHT_CARBON * metrics.accumulated_carbon
         )
         return score
 
@@ -416,19 +424,19 @@ class Grader:
             Efficiency score 0-100
         """
         # Base score from weighted metrics (penalize high cost)
-        metric_score = max(0, 100 - (weighted_score / 10))
+        metric_score = max(EFFICIENCY_SCORE_MIN, EFFICIENCY_SCORE_MAX - (weighted_score / EFFICIENCY_SCORE_METRIC_DIVISOR))
         
         # Bonus for deliveries
-        delivery_bonus = deliveries * 10
+        delivery_bonus = deliveries * EFFICIENCY_DELIVERY_BONUS
         
         # Penalty for excess steps
-        step_penalty = max(0, (num_steps - 10) * 0.5)
+        step_penalty = max(0, (num_steps - EFFICIENCY_STEP_THRESHOLD) * EFFICIENCY_STEP_PENALTY_PER_STEP)
         
         # Combine
         efficiency = metric_score + delivery_bonus - step_penalty
         
         # Clamp to 0-100
-        return max(0, min(100, efficiency))
+        return max(EFFICIENCY_SCORE_MIN, min(EFFICIENCY_SCORE_MAX, efficiency))
 
     def _generate_feedback(
         self,

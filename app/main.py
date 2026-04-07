@@ -6,10 +6,8 @@ Supports three optimization tasks via different action schemas.
 """
 
 from typing import Optional
-import requests
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from app.utils.logger import logger
 from app.api.schemas import (
@@ -33,7 +31,6 @@ from app.api.schemas import (
     EdgeData,
 )
 from app.engine.core_env import FreightEnvironment, EnvironmentConfig
-from app.api.grader import TrilemmaMetrics
 
 
 # ============================================================================
@@ -50,31 +47,54 @@ def get_env() -> FreightEnvironment:
         config = EnvironmentConfig()
         _env = FreightEnvironment(config)
         
-        # Setup default network
+        # Setup FULLY-CONNECTED network to ensure all cargo pairs have valid paths
+        # This prevents random cargo generation from creating unreachable deliveries
+        # Metrics are realistic: based on node distances
+        nodes = [
+            {"id": 0, "location": "Warehouse"},
+            {"id": 1, "location": "Port A"},
+            {"id": 2, "location": "Rail Hub"},
+            {"id": 3, "location": "Air Terminal"},
+            {"id": 4, "location": "Truck Terminal"},
+            {"id": 5, "location": "Destination"},
+        ]
+        
+        # Build fully-connected network with realistic metrics
+        # All node pairs are connected (ensures all cargos are deliverable)
+        edges = []
+        for i in range(len(nodes)):
+            for j in range(len(nodes)):
+                if i != j:
+                    # Calculate distance-based metrics (realistic)
+                    distance = abs(i - j)  # Relative distance
+                    
+                    # Time scales with distance (2-6 hours depending on distance)
+                    time = 1.0 + (distance * 0.8)
+                    
+                    # Cost scales with distance (60-300 depending on distance)
+                    cost = 60.0 + (distance * 40.0)
+                    
+                    # Carbon scales with distance (15-75 depending on distance)
+                    carbon = 15.0 + (distance * 10.0)
+                    
+                    edges.append({
+                        "source": i,
+                        "target": j,
+                        "time": time,
+                        "cost": cost,
+                        "carbon": carbon
+                    })
+        
         default_network = {
-            "nodes": [
-                {"id": 0, "location": "Warehouse"},
-                {"id": 1, "location": "Port A"},
-                {"id": 2, "location": "Rail Hub"},
-                {"id": 3, "location": "Air Terminal"},
-                {"id": 4, "location": "Truck Terminal"},
-                {"id": 5, "location": "Destination"},
-            ],
-            "edges": [
-                {"source": 0, "target": 1, "time": 2.0, "cost": 100.0, "carbon": 30.0},
-                {"source": 0, "target": 2, "time": 1.5, "cost": 80.0, "carbon": 20.0},
-                {"source": 0, "target": 3, "time": 0.5, "cost": 200.0, "carbon": 80.0},
-                {"source": 0, "target": 4, "time": 1.0, "cost": 60.0, "carbon": 25.0},
-                {"source": 1, "target": 5, "time": 3.0, "cost": 150.0, "carbon": 50.0},
-                {"source": 2, "target": 5, "time": 2.5, "cost": 120.0, "carbon": 35.0},
-                {"source": 3, "target": 5, "time": 1.5, "cost": 180.0, "carbon": 60.0},
-                {"source": 4, "target": 5, "time": 2.0, "cost": 100.0, "carbon": 30.0},
-                {"source": 1, "target": 2, "time": 1.0, "cost": 50.0, "carbon": 15.0},
-                {"source": 2, "target": 4, "time": 0.5, "cost": 30.0, "carbon": 10.0},
-            ],
+            "nodes": nodes,
+            "edges": edges,
         }
+        
         _env.setup_network(default_network)
-        logger.info("Default network configured")
+        # Reset environment after network setup to initialize cargos
+        _env.reset()
+        logger.info(f"Fully-connected network configured: {len(nodes)} nodes, {len(edges)} edges. "
+                   f"All cargo pairs are guaranteed to have valid paths.")
     
     return _env
 
@@ -87,10 +107,10 @@ def _environment_state_to_response(state: dict) -> EnvironmentState:
     network_data = state.get("network", {})
     nodes = [
         NodeData(
-            id=n[0],
-            location=n[1].get("location", f"Node{n[0]}"),
-            capacity=n[1].get("capacity"),
-            attributes={k: v for k, v in n[1].items() if k not in ["location", "capacity"]}
+            id=n["id"],
+            location=n.get("location", f"Node{n.get('id', 0)}"),
+            capacity=n.get("capacity"),
+            attributes={"disabled": n.get("disabled", False)}
         )
         for n in network_data.get("nodes", [])
     ]
@@ -111,7 +131,7 @@ def _environment_state_to_response(state: dict) -> EnvironmentState:
     
     return EnvironmentState(
         step=state.get("step", 0),
-        active_cargos=len(state.get("active_cargos", [])),
+        active_cargos=state.get("active_cargos", 0),
         completed_cargos=state.get("completed_cargos", 0),
         trilemma=trilemma,
         network=network
@@ -200,18 +220,154 @@ async def status_endpoint():
     )
 
 
+@app.get("/state-descriptor", response_model=BaseResponse)
+async def get_state_descriptor():
+    """
+    Get the state space descriptor for agent learning.
+    
+    Returns information about what the state space contains,
+    useful for agents to understand the observation space.
+    
+    This endpoint helps agents understand:
+    - What fields are in the state
+    - What ranges/units each field has
+    - What metrics are tracked (trilemma)
+    - Network structure (nodes, edges)
+    """
+    return BaseResponse(
+        success=True,
+        message="State space descriptor for agent learning",
+        data={
+            "state_fields": {
+                "step": {
+                    "description": "Current step number in episode",
+                    "type": "integer",
+                    "min": 0,
+                    "max": 1000,
+                    "unit": "steps"
+                },
+                "active_cargos": {
+                    "description": "Number of cargos currently being transported",
+                    "type": "integer",
+                    "min": 0,
+                    "max": 100,
+                    "unit": "count"
+                },
+                "completed_cargos": {
+                    "description": "Number of cargos successfully delivered",
+                    "type": "integer",
+                    "min": 0,
+                    "max": 100,
+                    "unit": "count"
+                },
+                "trilemma": {
+                    "description": "Key optimization metrics",
+                    "type": "object",
+                    "fields": {
+                        "accumulated_hours": {
+                            "description": "Total transit time",
+                            "type": "float",
+                            "min": 0.0,
+                            "max": 10000.0,
+                            "unit": "hours"
+                        },
+                        "accumulated_cost": {
+                            "description": "Total transportation cost",
+                            "type": "float",
+                            "min": 0.0,
+                            "max": 100000.0,
+                            "unit": "dollars"
+                        },
+                        "accumulated_carbon": {
+                            "description": "Total CO2 emissions",
+                            "type": "float",
+                            "min": 0.0,
+                            "max": 10000.0,
+                            "unit": "tons"
+                        }
+                    }
+                },
+                "network": {
+                    "description": "Network topology with nodes and edges",
+                    "type": "object",
+                    "fields": {
+                        "nodes": {
+                            "description": "List of network nodes",
+                            "type": "array",
+                            "item_fields": {
+                                "id": "Node identifier",
+                                "location": "Geographic location name",
+                                "capacity": "Max cargo capacity"
+                            }
+                        },
+                        "edges": {
+                            "description": "List of transportation routes",
+                            "type": "array",
+                            "item_fields": {
+                                "source": "Starting node",
+                                "target": "Destination node",
+                                "time": "Transit time in hours",
+                                "cost": "Cost in dollars",
+                                "carbon": "CO2 emissions in tons",
+                                "disabled": "Whether route is disrupted"
+                            }
+                        }
+                    }
+                }
+            },
+            "reward_function": {
+                "type": "weighted_trilemma",
+                "description": "Reward = -(0.5*time + 0.3*cost + 0.2*carbon)",
+                "formula": "-( WEIGHT_TIME * hours + WEIGHT_COST * dollars + WEIGHT_CARBON * tons )",
+                "weights": {
+                    "time": 0.5,
+                    "cost": 0.3,
+                    "carbon": 0.2
+                },
+                "note": "Negative reward because agents minimize cost; lower cost = higher reward"
+            },
+            "action_schema": {
+                "description": "Actions available to agents",
+                "tasks": {
+                    "task_1_time": {
+                        "objective": "Minimize transit time",
+                        "action_fields": ["task_type", "cargo_id", "path"]
+                    },
+                    "task_2_cost": {
+                        "objective": "Minimize cost",
+                        "action_fields": ["task_type", "cargo_id", "path"]
+                    },
+                    "task_3_multimodal": {
+                        "objective": "Balance time, cost, and carbon (trilemma)",
+                        "action_fields": ["task_type", "cargo_id", "path", "modes"]
+                    }
+                }
+            },
+            "episode_mechanics": {
+                "max_steps": 1000,
+                "reset_clears": ["step", "active_cargos", "completed_cargos", "trilemma"],
+                "done_condition": "step >= max_steps or all cargos delivered"
+            }
+        }
+    )
+
+
 # ============================================================================
 # Environment Management Endpoints
 # ============================================================================
 
 @app.post("/reset", response_model=ResetResponse)
-async def reset_environment(request: ResetRequest):
+async def reset_environment(request: ResetRequest = Body(default=None)):
     """
     Reset the environment to initial state.
     
     Applies disruptions based on seed and probability.
     """
     try:
+        # Handle empty/null request
+        if request is None:
+            request = ResetRequest()
+        
         env = get_env()
         
         # Update config if provided
@@ -718,12 +874,13 @@ async def grade_trajectory(trajectory: dict = None):
     
     Accepts a trajectory object with step data and returns a score
     calculated using the weighted formula:
-    Score = 0.5×time + 0.3×cost + 0.2×carbon
+    Score = TRILEMMA_WEIGHT_TIME×time + TRILEMMA_WEIGHT_COST×cost + TRILEMMA_WEIGHT_CARBON×carbon
     
     Score is normalized to [0.0, 1.0] range.
     """
     try:
-        from app.api.grader import Grader, TaskType
+        from app.api.grader import Grader
+        from app.api.schemas import TaskType
         
         # Extract trajectory from request
         trajectory_data = trajectory if isinstance(trajectory, dict) else {}
@@ -857,7 +1014,8 @@ async def run_baseline(config: dict = None):
         }
     """
     try:
-        from app.api.grader import Grader, TaskType
+        from app.api.grader import Grader
+        from app.api.schemas import TaskType
         from baseline.agent import RandomAgent
         
         config = config or {}
