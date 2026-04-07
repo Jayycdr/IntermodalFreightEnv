@@ -59,6 +59,25 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Project-specific - Reference and documentation materials
+docs/
+_reference/
+_archive/
+logs/*
+!logs/.gitkeep
+
+# IDE and local settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+config/local_config.yaml
+
 # Flask stuff:
 instance/
 .webassets-cache
@@ -143,6 +162,13 @@ outputs/
 .env.local
 .env.*.local
 config/.env
+
+# Reference and archived materials (development only)
+_reference/
+_archive/
+docs/_archive/
+docs/_dev/
+docs/
 .env
 
 # Docker

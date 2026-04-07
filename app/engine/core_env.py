@@ -10,6 +10,7 @@ import numpy as np
 from datetime import datetime
 
 from app.utils.logger import logger
+from app.engine.graph import FreightNetwork
 
 
 @dataclass
@@ -153,6 +154,32 @@ class FreightEnvironment:
         
         logger.info(f"Network setup with {len(self.nodes)} nodes and {len(self.edges)} edges")
 
+    @property
+    def network(self) -> FreightNetwork:
+        """
+        Get a FreightNetwork representation of the current graph.
+        
+        Returns:
+            FreightNetwork object with current nodes and edges
+        """
+        net = FreightNetwork()
+        
+        # Add all nodes
+        for node_id, node_data in self.nodes.items():
+            net.add_node(node_id, **node_data)
+        
+        # Add all edges (exclude source/target from attrs as they're separate params)
+        for (source, target), edge_data in self.edges.items():
+            # Filter out source and target from edge_data to avoid conflicts
+            attrs = {k: v for k, v in edge_data.items() if k not in ['source', 'target']}
+            net.add_edge(source, target, **attrs)
+        
+        # Sync disabled state
+        net.disabled_nodes = self.disabled_nodes.copy()
+        net.disabled_edges = self.disabled_edges.copy()
+        
+        return net
+
     def step(self, action: Dict[str, Any]) -> Tuple[Dict[str, Any], float, bool, Dict]:
         """
         Execute one step in the environment.
@@ -177,12 +204,15 @@ class FreightEnvironment:
         # Check if episode is done
         done = self._check_done()
         
-        # Additional info
+        # Additional info with both old and new key formats for compatibility
         info = {
             "step": self.current_step,
             "done": done,
             "cargos_active": len(self.active_cargos),
             "cargos_completed": len(self.completed_cargos),
+            "active_cargos": len(self.active_cargos),  # Old format
+            "completed_cargos": len(self.completed_cargos),  # Old format
+            "trilemma": self.trilemma.to_dict(),  # Metrics dict
             "reward": reward,
         }
         
@@ -578,3 +608,50 @@ class FreightEnvironment:
         except Exception as e:
             logger.error(f"Error routing cargo {cargo_id}: {e}")
             return False
+
+    def split_cargo(self, cargo_id: int, quantities: List[float]) -> List[Cargo]:
+        """
+        Split a cargo into multiple cargos with specified quantities.
+        
+        Args:
+            cargo_id: ID of cargo to split
+            quantities: List of quantities for each split
+            
+        Returns:
+            List of newly created Cargo objects
+        """
+        try:
+            # Find the cargo to split
+            cargo = self.get_cargo(cargo_id)
+            if not cargo:
+                logger.error(f"Cargo {cargo_id} not found")
+                return []
+            
+            # Create new cargos with the split quantities
+            split_cargos = []
+            for quantity in quantities:
+                new_cargo = Cargo(
+                    cargo_id=self.cargo_counter,
+                    origin=cargo.origin,
+                    destination=cargo.destination,
+                    quantity=quantity,
+                    weight=cargo.weight * (quantity / cargo.quantity) if cargo.quantity > 0 else 0,
+                    priority=cargo.priority,
+                    deadline=cargo.deadline
+                )
+                self.cargo_counter += 1
+                self.active_cargos.append(new_cargo)
+                split_cargos.append(new_cargo)
+                logger.debug(f"Created split cargo {new_cargo.cargo_id} from {cargo_id} with quantity {quantity}")
+            
+            # Remove original cargo from active
+            if cargo in self.active_cargos:
+                self.active_cargos.remove(cargo)
+                logger.debug(f"Removed original cargo {cargo_id}")
+            
+            logger.info(f"Cargo {cargo_id} split into {len(split_cargos)} parts")
+            return split_cargos
+            
+        except Exception as e:
+            logger.error(f"Error splitting cargo {cargo_id}: {e}")
+            return []

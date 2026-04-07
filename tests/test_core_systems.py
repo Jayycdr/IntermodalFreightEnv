@@ -9,7 +9,7 @@ Demonstrates:
 - Disruption engine
 """
 
-from app.engine.graph import FreightNetwork, EdgeData
+from app.engine.graph import FreightNetwork
 from app.engine.core_env import FreightEnvironment, EnvironmentConfig
 from app.utils.logger import logger
 
