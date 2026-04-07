@@ -6,7 +6,7 @@ Supports three optimization tasks via different action schemas.
 """
 
 from typing import Optional
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.utils.logger import logger
@@ -47,33 +47,54 @@ def get_env() -> FreightEnvironment:
         config = EnvironmentConfig()
         _env = FreightEnvironment(config)
         
-        # Setup default network
+        # Setup FULLY-CONNECTED network to ensure all cargo pairs have valid paths
+        # This prevents random cargo generation from creating unreachable deliveries
+        # Metrics are realistic: based on node distances
+        nodes = [
+            {"id": 0, "location": "Warehouse"},
+            {"id": 1, "location": "Port A"},
+            {"id": 2, "location": "Rail Hub"},
+            {"id": 3, "location": "Air Terminal"},
+            {"id": 4, "location": "Truck Terminal"},
+            {"id": 5, "location": "Destination"},
+        ]
+        
+        # Build fully-connected network with realistic metrics
+        # All node pairs are connected (ensures all cargos are deliverable)
+        edges = []
+        for i in range(len(nodes)):
+            for j in range(len(nodes)):
+                if i != j:
+                    # Calculate distance-based metrics (realistic)
+                    distance = abs(i - j)  # Relative distance
+                    
+                    # Time scales with distance (2-6 hours depending on distance)
+                    time = 1.0 + (distance * 0.8)
+                    
+                    # Cost scales with distance (60-300 depending on distance)
+                    cost = 60.0 + (distance * 40.0)
+                    
+                    # Carbon scales with distance (15-75 depending on distance)
+                    carbon = 15.0 + (distance * 10.0)
+                    
+                    edges.append({
+                        "source": i,
+                        "target": j,
+                        "time": time,
+                        "cost": cost,
+                        "carbon": carbon
+                    })
+        
         default_network = {
-            "nodes": [
-                {"id": 0, "location": "Warehouse"},
-                {"id": 1, "location": "Port A"},
-                {"id": 2, "location": "Rail Hub"},
-                {"id": 3, "location": "Air Terminal"},
-                {"id": 4, "location": "Truck Terminal"},
-                {"id": 5, "location": "Destination"},
-            ],
-            "edges": [
-                {"source": 0, "target": 1, "time": 2.0, "cost": 100.0, "carbon": 30.0},
-                {"source": 0, "target": 2, "time": 1.5, "cost": 80.0, "carbon": 20.0},
-                {"source": 0, "target": 3, "time": 0.5, "cost": 200.0, "carbon": 80.0},
-                {"source": 0, "target": 4, "time": 1.0, "cost": 60.0, "carbon": 25.0},
-                {"source": 1, "target": 5, "time": 3.0, "cost": 150.0, "carbon": 50.0},
-                {"source": 2, "target": 5, "time": 2.5, "cost": 120.0, "carbon": 35.0},
-                {"source": 3, "target": 5, "time": 1.5, "cost": 180.0, "carbon": 60.0},
-                {"source": 4, "target": 5, "time": 2.0, "cost": 100.0, "carbon": 30.0},
-                {"source": 1, "target": 2, "time": 1.0, "cost": 50.0, "carbon": 15.0},
-                {"source": 2, "target": 4, "time": 0.5, "cost": 30.0, "carbon": 10.0},
-            ],
+            "nodes": nodes,
+            "edges": edges,
         }
+        
         _env.setup_network(default_network)
         # Reset environment after network setup to initialize cargos
         _env.reset()
-        logger.info("Default network configured and environment reset")
+        logger.info(f"Fully-connected network configured: {len(nodes)} nodes, {len(edges)} edges. "
+                   f"All cargo pairs are guaranteed to have valid paths.")
     
     return _env
 
@@ -86,10 +107,10 @@ def _environment_state_to_response(state: dict) -> EnvironmentState:
     network_data = state.get("network", {})
     nodes = [
         NodeData(
-            id=n[0],
-            location=n[1].get("location", f"Node{n[0]}"),
-            capacity=n[1].get("capacity"),
-            attributes={k: v for k, v in n[1].items() if k not in ["location", "capacity"]}
+            id=n["id"],
+            location=n.get("location", f"Node{n.get('id', 0)}"),
+            capacity=n.get("capacity"),
+            attributes={"disabled": n.get("disabled", False)}
         )
         for n in network_data.get("nodes", [])
     ]
@@ -110,7 +131,7 @@ def _environment_state_to_response(state: dict) -> EnvironmentState:
     
     return EnvironmentState(
         step=state.get("step", 0),
-        active_cargos=len(state.get("active_cargos", [])),
+        active_cargos=state.get("active_cargos", 0),
         completed_cargos=state.get("completed_cargos", 0),
         trilemma=trilemma,
         network=network
@@ -336,13 +357,17 @@ async def get_state_descriptor():
 # ============================================================================
 
 @app.post("/reset", response_model=ResetResponse)
-async def reset_environment(request: ResetRequest):
+async def reset_environment(request: ResetRequest = Body(default=None)):
     """
     Reset the environment to initial state.
     
     Applies disruptions based on seed and probability.
     """
     try:
+        # Handle empty/null request
+        if request is None:
+            request = ResetRequest()
+        
         env = get_env()
         
         # Update config if provided
