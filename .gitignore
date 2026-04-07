@@ -143,6 +143,7 @@ outputs/
 .env.local
 .env.*.local
 config/.env
+.env
 
 # Docker
 .dockerignore
