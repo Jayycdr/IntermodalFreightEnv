@@ -6,8 +6,28 @@ Implements graph operations for the transportation network topology.
 
 from typing import List, Dict, Any, Optional, Tuple
 import networkx as nx
+from dataclasses import dataclass
 
 from app.utils.logger import logger
+
+
+@dataclass
+class EdgeData:
+    """Represents edge attributes in the freight network."""
+    time: float = 0.0
+    cost: float = 0.0
+    carbon: float = 0.0
+    distance: float = 0.0
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'EdgeData':
+        """Create EdgeData from dictionary."""
+        return cls(
+            time=data.get('time', 0.0),
+            cost=data.get('cost', 0.0),
+            carbon=data.get('carbon', 0.0),
+            distance=data.get('distance', 0.0)
+        )
 
 
 class FreightNetwork:
@@ -20,6 +40,8 @@ class FreightNetwork:
     def __init__(self):
         """Initialize the freight network."""
         self.graph = nx.DiGraph()
+        self.disabled_nodes: set = set()
+        self.disabled_edges: set = set()
         logger.info("FreightNetwork initialized")
 
     def add_node(self, node_id: int, **attributes) -> None:
@@ -104,3 +126,79 @@ class FreightNetwork:
             self.add_edge(source, target, **attrs)
         
         logger.info("Graph loaded from dictionary")
+
+    def get_edge(self, source: int, target: int) -> Optional[EdgeData]:
+        """
+        Get edge attributes between two nodes.
+        
+        Args:
+            source: Source node
+            target: Target node
+            
+        Returns:
+            EdgeData object, or None if edge doesn't exist
+        """
+        try:
+            edge_dict = self.graph.edges[source, target]
+            return EdgeData.from_dict(edge_dict)
+        except KeyError:
+            return None
+
+    def get_all_nodes(self) -> List[int]:
+        """
+        Get all nodes in the network.
+        
+        Returns:
+            List of all node IDs
+        """
+        return list(self.graph.nodes())
+
+    def get_all_edges(self) -> List[Tuple[int, int]]:
+        """
+        Get all edges in the network.
+        
+        Returns:
+            List of tuples (source, target)
+        """
+        return list(self.graph.edges())
+
+    def disable_node(self, node_id: int) -> None:
+        """
+        Disable a node (remove from graph).
+        
+        Args:
+            node_id: Node to disable
+        """
+        if node_id in self.graph:
+            self.graph.remove_node(node_id)
+            logger.debug(f"Node {node_id} disabled")
+
+    def disable_edge(self, source: int, target: int) -> None:
+        """
+        Disable an edge (remove from graph).
+        
+        Args:
+            source: Source node
+            target: Target node
+        """
+        if self.graph.has_edge(source, target):
+            self.graph.remove_edge(source, target)
+            logger.debug(f"Edge {source}->{target} disabled")
+
+    def get_available_nodes(self) -> List[int]:
+        """
+        Get available nodes in the network.
+        
+        Returns:
+            List of available node IDs
+        """
+        return list(self.graph.nodes())
+
+    def get_available_edges(self) -> List[Tuple[int, int]]:
+        """
+        Get available edges in the network.
+        
+        Returns:
+            List of available edge tuples
+        """
+        return list(self.graph.edges())
