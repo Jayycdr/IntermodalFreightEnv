@@ -1,6 +1,6 @@
-# Intermodal Freight Environment: Multi-Objective Transportation Optimization
 
 ---
+
 title: Intermodal Freight Environment
 emoji: 🚚 ✈️ 🚄 🛳️
 colorFrom: blue
@@ -11,6 +11,9 @@ app_file: app/main.py
 pinned: false
 
 ---
+
+# Intermodal Freight Environment: Multi-Objective Transportation Optimization
+
 
 A production-ready reinforcement learning environment for multi-objective freight routing optimization.
 
