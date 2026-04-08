@@ -50,7 +50,7 @@ dependencies = [
 ]
 
 [project.scripts]
-server = "app.main:main"
+server = "server.app:app"
 
 [project.optional-dependencies]
 dev = [
