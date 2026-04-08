@@ -181,5 +181,3 @@ docs/
 *.pkl
 results/
 experiments/
-
-docs/*
