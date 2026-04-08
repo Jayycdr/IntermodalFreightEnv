@@ -9,6 +9,7 @@ sdk: docker
 sdk_version: "1.0"
 app_file: app/main.py
 pinned: false
+
 ---
 
 A production-ready reinforcement learning environment for multi-objective freight routing optimization.
