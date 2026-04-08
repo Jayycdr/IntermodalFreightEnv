@@ -1138,6 +1138,11 @@ async def run_baseline(config: dict = None):
         )
 
 
+def main():
+    """Entry point for the application server."""
+    return app
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)
