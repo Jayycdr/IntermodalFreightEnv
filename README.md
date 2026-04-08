@@ -1,7 +1,7 @@
 
 ---
 title: Intermodal Freight Environment
-emoji: 🚚 ✈️ 🚄 🛳️
+emoji: 🚚
 colorFrom: blue
 colorTo: indigo
 sdk: docker
