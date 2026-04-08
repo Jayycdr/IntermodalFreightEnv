@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "IntermodalFreightEnv"
+version = "1.0.0"
+description = "A multi-objective reinforcement learning environment for intermodal freight transportation optimization"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Jay", email = "jaysutar2705@gmail.com"},
+    {name = "Harsh", email = "kcharshpawar@gmail.com"},
+    {name = "Aryan", email = "aryansunka140@gmail.com"}
+]
+keywords = ["reinforcement-learning", "transportation", "optimization", "multi-objective"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "fastapi==0.105.0",
+    "uvicorn==0.24.0",
+    "pydantic==2.6.0",
+    "pydantic-settings==2.1.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "networkx>=3.1",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "pylint>=3.0.0",
+    "loguru>=0.7.0",
+    "requests>=2.31.0",
+    "streamlit>=1.28.0",
+    "plotly>=5.17.0",
+    "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "pylint>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Jayycdr/IntermodalFreightEnv"
+Repository = "https://github.com/Jayycdr/IntermodalFreightEnv"
+Documentation = "https://harshpawar-7-intermodal-freight-env.hf.space/docs"
+
+[tool.black]
+line-length = 100
+target-version = ["py38", "py39", "py310", "py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.pylint.messages_control]
+disable = [
+    "C0111",  # missing-docstring
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.setuptools]
+packages = ["app", "baseline", "tests", "scripts"]
+
+[tool.setuptools.package-data]
+app = ["*.py"]
+baseline = ["*.py"]
+config = ["*.yaml"]
