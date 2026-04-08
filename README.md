@@ -1,6 +1,5 @@
 
 ---
-
 title: Intermodal Freight Environment
 emoji: 🚚 ✈️ 🚄 🛳️
 colorFrom: blue
@@ -9,7 +8,6 @@ sdk: docker
 sdk_version: "1.0"
 app_file: app/main.py
 pinned: false
-
 ---
 
 # Intermodal Freight Environment: Multi-Objective Transportation Optimization
