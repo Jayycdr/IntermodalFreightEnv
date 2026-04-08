@@ -1,5 +1,16 @@
 # Intermodal Freight Environment: Multi-Objective Transportation Optimization
 
+---
+title: Intermodal Freight Environment
+emoji: 🚚 ✈️ 🚄 🛳️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+sdk_version: "1.0"
+app_file: app/main.py
+pinned: false
+---
+
 A production-ready reinforcement learning environment for multi-objective freight routing optimization.
 
 ## Table of Contents
@@ -49,6 +60,28 @@ The environment tracks:
 - Delivery deadlines (for time-constrained tasks)
 - Active shipments and completed deliveries
 - Network state (all edges available)
+
+
+### Workflow Flowchart
+
+```mermaid
+flowchart TD
+    Start([Start]) --> Reset["POST /reset<br/>(Select Task)"]
+    Reset --> Init["Initialize Environment<br/>(Observation Space)"]
+    Init --> Agent["Agent Decision<br/>(LLM or Rule-based)"]
+    Agent --> Action["POST /step<br/>(Submit Action)"]
+    Action --> Compute["Compute Reward<br/>(Time, Cost, Carbon)"]
+    Compute --> Check{Episode<br/>Complete?}
+    Check -->|No| Agent
+    Check -->|Yes| Grade["POST /grader<br/>(Get Score)"]
+    Grade --> Score["Return Final Score<br/>[0.0 - 1.0]"]
+    Score --> End([End])
+    
+    style Reset fill:#4A90E2
+    style Action fill:#4A90E2
+    style Grade fill:#50C878
+    style Score fill:#F5A623
+```
 
 ### Determinism and Reproducibility
 
