@@ -900,9 +900,9 @@ async def grade_trajectory(trajectory: dict = None):
         grader.load_trajectory(trajectory_steps)
         result = grader.evaluate(task_type=task)
         
-        # Normalize score to (0, 1) exclusive - divide by 100 and clamp to strict boundaries
-        # EFFICIENCY_SCORE_MIN/MAX ensure raw scores map to valid range
-        normalized_score = max(0.001, min(0.999, result.efficiency_score / 100.0))
+        # Normalize score to (0, 1) exclusive - divide by 100 and clamp to (0.01, 0.99)
+        # This range survives .2f formatting and validation
+        normalized_score = max(0.01, min(0.99, result.efficiency_score / 100.0))
         
         return BaseResponse(
             success=True,
@@ -925,7 +925,7 @@ async def grade_trajectory(trajectory: dict = None):
         return BaseResponse(
             success=False,
             message=f"Grading error: {str(e)}",
-            data={"score": 0.001}
+            data={"score": 0.01}
         )
 
 
