@@ -29,8 +29,8 @@ EFFICIENCY_SCORE_METRIC_DIVISOR = 10.0      # Divide weighted score by this to g
 EFFICIENCY_DELIVERY_BONUS = 10.0            # Points per successful delivery
 EFFICIENCY_STEP_THRESHOLD = 10              # Steps below this have no penalty
 EFFICIENCY_STEP_PENALTY_PER_STEP = 0.5      # Penalty per step over threshold
-EFFICIENCY_SCORE_MAX = 100.0                # Maximum efficiency score
-EFFICIENCY_SCORE_MIN = 0.0                  # Minimum efficiency score
+EFFICIENCY_SCORE_MAX = 99.9                 # Maximum efficiency score (maps to 0.999 after /100)
+EFFICIENCY_SCORE_MIN = 0.1                  # Minimum efficiency score (maps to 0.001 after /100)
 
 
 # ============================================================================
