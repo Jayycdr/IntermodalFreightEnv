@@ -137,10 +137,10 @@ def api_grader(task_id: str, trajectory: List[Dict[str, Any]]) -> float:
         )
         response.raise_for_status()
         result = response.json()
-        return result.get("score", 0.0)
+        return result.get("score", 0.001)
     except Exception as e:
         print(f"ERROR: Grading failed: {e}", file=sys.stderr)
-        return 0.0
+        return 0.001
 
 
 # ============================================================================
