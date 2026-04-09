@@ -35,13 +35,13 @@ except ImportError:
 # ============================================================================
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_KEY = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# Initialize OpenAI client
+# Initialize OpenAI client with provided API endpoint and key
 try:
-    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    openai_client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
     has_openai = True
 except Exception as e:
     print(f"WARNING: OpenAI initialization failed: {e}", file=sys.stderr)
@@ -350,23 +350,8 @@ def run_baseline_evaluation() -> Dict[str, List[float]]:
         "task_3_multimodal": []
     }
     
-    # Check API availability - continue with 0 scores if not available
-    api_available = api_health()
-    if not api_available:
-        print("WARNING: API is not running at " + API_BASE_URL, file=sys.stderr)
-        print("Running with zero scores for all tasks", file=sys.stderr)
-        
-        # Still generate required [START]/[STEP]/[END] output blocks to stdout
-        for task_type in ["task_1_time", "task_2_cost", "task_3_multimodal"]:
-            for episode in range(1, 4):
-                log_start(task_type, "intermodal_freight", MODEL_NAME)
-                log_step(1, '{"error": "API unavailable"}', 0.0, True, "API not running")
-                log_end(False, 1, 0.0, [0.0])
-            results[task_type] = [0.0, 0.0, 0.0]
-        
-        return results
-    
-    # Run 3 episodes per task for reproducibility check
+    # Attempt to run episodes - LLM calls will be made even if environment API unavailable
+    # The validator provides API_BASE_URL for LLM calls via LiteLLM proxy
     for task_type in ["task_1_time", "task_2_cost", "task_3_multimodal"]:
         print(f"\n{'='*70}", file=sys.stderr)
         print(f"Running baseline: {task_type}", file=sys.stderr)
