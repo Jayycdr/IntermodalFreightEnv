@@ -315,15 +315,16 @@ def run_episode(task_type: str = "task_1_time", episode_num: int = 1, max_steps:
         # Grade trajectory
         final_score = api_grader(task_id, trajectory)
         
-        # Normalize score to [0, 1] if needed
-        final_score = min(max(float(final_score), 0.0), 1.0)
+        # Normalize score to (0, 1) exclusive - validator requires strictly between 0 and 1
+        # Clamp to (0.001, 0.999) to ensure boundaries are never hit
+        final_score = max(min(float(final_score), 0.999), 0.001)
         
         # Determine success (score >= 0.5 is a reasonable threshold)
         success = final_score >= 0.5
         
     except Exception as e:
         print(f"ERROR: Episode failed with exception: {e}", file=sys.stderr)
-        final_score = 0.0
+        final_score = 0.001  # Use 0.001 instead of 0.0 to satisfy strict (0,1) requirement
         success = False
         rewards_list = []
         steps_taken = 0
