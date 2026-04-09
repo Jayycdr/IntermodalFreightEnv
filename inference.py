@@ -351,13 +351,19 @@ def run_baseline_evaluation() -> Dict[str, List[float]]:
     }
     
     # Check API availability - continue with 0 scores if not available
-    if not api_health():
+    api_available = api_health()
+    if not api_available:
         print("WARNING: API is not running at " + API_BASE_URL, file=sys.stderr)
         print("Running with zero scores for all tasks", file=sys.stderr)
-        # Return default scores without exiting with error
-        results["task_1_time"] = [0.0] * 3
-        results["task_2_cost"] = [0.0] * 3
-        results["task_3_multimodal"] = [0.0] * 3
+        
+        # Still generate required [START]/[STEP]/[END] output blocks to stdout
+        for task_type in ["task_1_time", "task_2_cost", "task_3_multimodal"]:
+            for episode in range(1, 4):
+                log_start(task_type, "intermodal_freight", MODEL_NAME)
+                log_step(1, '{"error": "API unavailable"}', 0.0, True, "API not running")
+                log_end(False, 1, 0.0, [0.0])
+            results[task_type] = [0.0, 0.0, 0.0]
+        
         return results
     
     # Run 3 episodes per task for reproducibility check
