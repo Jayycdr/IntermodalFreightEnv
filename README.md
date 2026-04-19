@@ -11,6 +11,7 @@ pinned: false
 
 # Intermodal Freight Environment: Multi-Objective Transportation Optimization
 
+Phase 1 Cleared but not got into offline round but great learning !
 
 A production-ready reinforcement learning environment for multi-objective freight routing optimization.
 
